@@ -47,11 +47,10 @@ state.
 | `status` | `captureId` | `CaptureStatus` | `capture.status` → `capture.status.result` |
 | `stop` | `captureId` | `CaptureArtifact` | `capture.stop` → `capture.stop.result` |
 | `cancel` | `captureId` | `CaptureStatus` | `capture.cancel` → `capture.cancel.result` |
-| `release` | `captureId` | acknowledgement | `capture.release` → `capture.release.result` |
-| `onEvent` | handler | subscription cancellation handle | receives `capture.changed` |
+| `release` | `captureId` | `captureId` | `capture.release` → `capture.release.result` |
 
-`status` is authoritative. `onEvent` is advisory; a missed event never loses a
-terminal artifact or terminal error.
+`status` is authoritative. `capture.changed` is advisory; a missed event never
+loses a terminal artifact or terminal error.
 
 ### `CaptureInfo`
 
@@ -132,6 +131,11 @@ sensitive data to one capture per identity.
 
 `capture.changed` carries `CaptureEvent`. It is a wake-up hint only. The napplet
 uses `status` to retrieve the authoritative terminal state and artifact.
+
+There is no subscribe or unsubscribe operation. The runtime
+automatically pushes `capture.changed` to the bound napplet endpoint while that
+endpoint remains present. A projection MAY expose an idiomatic event-listener
+shape as guidance, but that shape is not part of this NAP contract.
 
 ### `CaptureError`
 
@@ -404,3 +408,4 @@ required before this draft should be considered mergeable.
 ## Changelog
 
 - `8f69d1e` - Define runtime-owned microphone consent, capture lifecycle, retained artifacts, wire messages, limits, and security rules.
+- Pending semantic commit - Clarify automatic change events and the language-neutral release result.
