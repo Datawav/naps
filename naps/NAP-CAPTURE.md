@@ -403,4 +403,4 @@ required before this draft should be considered mergeable.
 
 ## Changelog
 
-- Initial draft pending commit identifier.
+- `8f69d1e` - Define runtime-owned microphone consent, capture lifecycle, retained artifacts, wire messages, limits, and security rules.
