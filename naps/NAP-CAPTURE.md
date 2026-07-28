@@ -408,4 +408,4 @@ required before this draft should be considered mergeable.
 ## Changelog
 
 - `8f69d1e` - Define runtime-owned microphone consent, capture lifecycle, retained artifacts, wire messages, limits, and security rules.
-- Pending semantic commit - Clarify automatic change events and the language-neutral release result.
+- `3b83f79` - Define automatic change delivery and a language-neutral release result.
