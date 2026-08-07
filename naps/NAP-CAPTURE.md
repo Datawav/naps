@@ -81,8 +81,10 @@ Duplicate parameter names make a request item invalid. Parsing removes optional
 whitespace outside a parameter value. Quoted-string escaping is removed, but
 whitespace inside the quoted value is preserved. Parameter values are otherwise
 compared byte-for-byte and case-sensitively. For the `codecs` parameter, split the
-unquoted comma-separated value, remove optional whitespace around each token, and
-compare the resulting ordered token list ASCII case-insensitively. Every
+unquoted comma-separated value and remove optional whitespace around each token.
+Compare the resulting ordered token list case-sensitively by default. A
+registered codec namespace MAY define a different comparison rule; apply it only
+when both tokens belong to that namespace. Every
 parameter requested by the caller MUST be present and equal under this algorithm
 in the actual output; additional actual parameters are allowed. Parameter order
 does not affect compatibility. The runtime MUST apply this same algorithm
@@ -111,18 +113,12 @@ offer device and quality choices in trusted shell UI.
 A successful `start` result means consent succeeded and recording is active. A
 runtime MUST NOT return a `CaptureSession` while consent is pending.
 
-### Binary values
-
-The language-neutral `binary` type is an immutable complete byte sequence. It is
-never text, base64, a live stream, or a transferable device/recorder handle. Each
-projection MUST define one normative carrier and its byte-length operation.
-
 ### `CaptureArtifact`
 
 | Field | Required | Type | Notes |
 |---|---|---|---|
 | `captureId` | yes | text | Identifier of the completed capture. |
-| `data` | yes | `binary` | Complete valid encoded audio artifact. |
+| `data` | yes | any | Projection-defined carrier for one immutable, complete encoded audio byte sequence. It is never text, base64, a live stream, or a device/recorder handle. |
 | `mimeType` | yes | text | Normalized actual MIME type of `data`. |
 | `size` | yes | non-negative integer | Exact byte length of `data`. |
 | `durationMs` | yes | non-negative integer | Runtime-measured active capture interval. |
@@ -187,10 +183,8 @@ event-listener shape as guidance, but that shape is not part of this NAP contrac
 
 ## Lifecycle
 
-An **endpoint generation** is one authenticated lifetime of a projection endpoint.
-For the web projection it is one shell-registered iframe `Window`; reload,
-navigation, unregister, or replacement ends that generation, even when the new
-endpoint has the same `(dTag, aggregateHash)` identity.
+An **endpoint generation** is one authenticated lifetime of a projection
+endpoint. Each projection MUST define when a generation begins and ends.
 
 Each runtime MUST reserve at most one pending, recording, finalizing, or retained
 capture slot per verified napplet identity. The slot's owner is the authenticated
@@ -277,7 +271,7 @@ Rules:
 
 | Trusted action | Required outcome |
 |---|---|
-| Decline or dismiss consent before activation | `capture.error` with `user-cancelled`; no `captureId`, status, artifact, or event. |
+| Decline or dismiss consent before activation | `capture.start.result` with `user-cancelled`; no `captureId`, status, artifact, or event. |
 | trusted **Stop** during recording | Complete and retain one artifact with `reason: "user"`. |
 | trusted **Discard** during recording or finalization | Stop input, erase runtime-held bytes, and commit `cancelled` with `reason: "user"`. |
 | trusted **Discard** after completion | Erase retained runtime state immediately; later operations return `capture-not-found`. |
@@ -296,8 +290,9 @@ Pause/resume is not a baseline v1 operation.
 ## Wire Protocol
 
 All request messages carry a caller-generated correlation `id`. While the source
-endpoint generation remains present and authorized, each processed request MUST settle exactly once with either its result type or `capture.error`; both echo
-that `id`. Endpoint unload or revocation cancels undeliverable pending responses.
+endpoint generation remains present and authorized, each processed request MUST
+settle exactly once with its matching result type, which echoes that `id`.
+Endpoint unload or revocation cancels undeliverable pending responses.
 Request-ID replay behavior is owned by the common transport, not this domain, and
 callers MUST use a fresh `id` for each operation while an earlier request is
 pending.
@@ -313,31 +308,30 @@ Responses and events MUST be delivered only to the owning endpoint generation.
 | Type | Direction | Payload fields |
 |---|---|---|
 | `capture.info` | napplet → runtime | `id` |
-| `capture.info.result` | runtime → napplet | `id`, `info` |
+| `capture.info.result` | runtime → napplet | `id`, exactly one of `info` or `error` |
 | `capture.start` | napplet → runtime | `id`, `request` |
-| `capture.start.result` | runtime → napplet | `id`, `session` |
+| `capture.start.result` | runtime → napplet | `id`, exactly one of `session` or `error` |
 | `capture.status` | napplet → runtime | `id`, `captureId` |
-| `capture.status.result` | runtime → napplet | `id`, `status` |
+| `capture.status.result` | runtime → napplet | `id`, exactly one of `status` or `error` |
 | `capture.stop` | napplet → runtime | `id`, `captureId` |
-| `capture.stop.result` | runtime → napplet | `id`, `artifact` |
+| `capture.stop.result` | runtime → napplet | `id`, exactly one of `artifact` or `error` |
 | `capture.cancel` | napplet → runtime | `id`, `captureId` |
-| `capture.cancel.result` | runtime → napplet | `id`, `status` |
+| `capture.cancel.result` | runtime → napplet | `id`, exactly one of `status` or `error` |
 | `capture.release` | napplet → runtime | `id`, `captureId` |
-| `capture.release.result` | runtime → napplet | `id`, `captureId` |
+| `capture.release.result` | runtime → napplet | `id`, exactly one of `captureId` or `error` |
 | `capture.changed` | runtime → napplet | `event` |
-| `capture.error` | runtime → napplet | `id`, `error` |
 
 ### Result and error routing
 
 | Situation | Correlated request outcome | Retained status / event |
 |---|---|---|
-| Malformed or unsupported request, policy denial, consent decline, or failure before a session exists | One `capture.error` | None |
-| Unknown, foreign, stale, or wrong-state `captureId` | One `capture.error` | No transition and no event |
+| Malformed or unsupported request, policy denial, consent decline, or failure before a session exists | Matching `*.result` with `error` | None |
+| Unknown, foreign, stale, or wrong-state `captureId` | Matching `*.result` with `error` | No transition and no event |
 | Successful operation | One matching `*.result` | If and only if it causes the initial terminal commit, retain status and emit one event |
-| Failure while a requested `stop` is finalizing | One `capture.error` with the terminal error code | Commit `failed` and emit one event |
-| Pending `stop` superseded by trusted Discard | One `capture.error` with `user-cancelled` | Commit `cancelled` with `reason: "user"` and emit one event |
-| Pending `stop` superseded by platform-permission or shell-policy revocation | One `capture.error` with `permission-denied` or `policy-denied`, respectively | Commit `cancelled` with `reason: "revoked"` and emit one event |
-| An asynchronous terminal failure after successful `start`, with no operation awaiting completion | No request response | Commit `failed` and emit one event; never emit uncorrelated `capture.error` |
+| Failure while a requested `stop` is finalizing | `capture.stop.result` with the terminal error | Commit `failed` and emit one event |
+| Pending `stop` superseded by trusted Discard | `capture.stop.result` with `user-cancelled` | Commit `cancelled` with `reason: "user"` and emit one event |
+| Pending `stop` superseded by platform-permission or shell-policy revocation | `capture.stop.result` with `permission-denied` or `policy-denied`, respectively | Commit `cancelled` with `reason: "revoked"` and emit one event |
+| An asynchronous terminal failure after successful `start`, with no operation awaiting completion | No request response | Commit `failed` and emit one event; never emit an uncorrelated result |
 
 A pre-session failure and an asynchronous terminal failure are distinct. A
 `start` remains pending until trusted consent, platform permission, and encoder
@@ -520,30 +514,11 @@ visible, revocable capability.
 - Live audio, waveform, and level streaming are excluded. They add continuous
   listening and high-frequency transport semantics not needed here.
 
-## Web Binding
+## Projection
 
-This NAP does not weaken or relax the web projection's sandbox. Web runtimes
-remain governed by [NIP-5D](https://github.com/nostr-protocol/nips/pull/2303),
-including source-window authentication and `sandbox="allow-scripts"` without
-`allow-same-origin`.
-
-For capture authorization, a web shell MUST maintain an opaque registration
-generation in addition to each registered iframe `Window` reference and verified
-identity. Initial registration creates it. Navigation, reload, unregister, or
-replacement MUST invalidate it and tear down its capture state before the shell
-accepts messages under a new registration, even if the browser reuses the same
-`WindowProxy` and the verified identity is unchanged. The web owner key is the
-current `(Window reference, registration generation)` pair. This token is
-shell-internal and MUST NOT be accepted from or exposed to the napplet.
-
-Web runtimes MUST represent `CaptureArtifact.data` as a `Blob` carried as a
-member of the `postMessage` envelope by structured clone, without a transfer
-list. `CaptureArtifact.size` MUST equal `Blob.size`, and the `Blob.type` MUST be
-MIME-compatible with `CaptureArtifact.mimeType` under the algorithm above.
-Runtimes MUST NOT JSON-stringify this envelope, substitute an `ArrayBuffer` or
-typed array, or encode audio as text/base64. Structured cloning the immutable
-`Blob` does not transfer ownership; the runtime retains its reference until the
-capture lifecycle erases it.
+Each projection MUST define its endpoint-generation lifecycle and the normative
+carrier and byte-length operation for `CaptureArtifact.data`. The web binding is
+defined by the [web projection](../projections/web.md#capture).
 
 ## Non-Goals
 
