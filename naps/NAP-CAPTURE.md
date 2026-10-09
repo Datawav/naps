@@ -543,3 +543,5 @@ required before this draft should be considered mergeable.
 - `3b83f79` - Define automatic change delivery and a language-neutral release result.
 - `88b8b49` - Bind captures to endpoint generations and make consent, limits, retention, terminal races, binary delivery, and errors deterministic.
 - `ad1c293` - Move web carriers to the projection, preserve codec identifier case, use matching result envelopes, and avoid introducing a canonical byte type.
+
+- `bddbafd` - Adopted injected-domain discovery and verified manifest/artifact attribution while preserving endpoint-generation ownership.
